@@ -1,29 +1,40 @@
 # src/data_loader.py
 
-import yfinance as yf
-import pandas as pd
 import os
+import requests
+import pandas as pd
+from config import POLYGON_API_KEY
 
-def load_data(ticker="AAPL", interval="5m", period="5d", save_csv=True):
+def load_data(ticker="AAPL", start="2024-05-01", end="2024-05-10", interval="5", save_csv=True):
     """
-    Fetch historical stock data using yfinance.
-    Optionally save to CSV.
+    Fetch historical stock data from Polygon.
     """
-    print(f"[INFO] Fetching data for {ticker}...")
-    df = yf.download(ticker, interval=interval, period=period)
-    df = df[['Close']]  # Use only Close prices
-    df.dropna(inplace=True)
-    df.reset_index(inplace=True)
+    print(f"[INFO] Fetching {interval}min data for {ticker} from Polygon...")
+
+    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/{interval}/minute/{start}/{end}"
+    params = {
+        "adjusted": "true",
+        "sort": "asc",
+        "limit": 50000,
+        "apiKey": POLYGON_API_KEY
+    }
+
+    response = requests.get(url, params=params)
+    response.raise_for_status()
+
+    data = response.json().get("results", [])
+    if not data:
+        raise ValueError("No data returned from Polygon.")
+
+    df = pd.DataFrame(data)
+    df['t'] = pd.to_datetime(df['t'], unit='ms')
+    df.set_index('t', inplace=True)
+    df.rename(columns={"c": "Close"}, inplace=True)
 
     if save_csv:
-        # Ensure the data directory exists
-        data_dir = "data"
-        os.makedirs(data_dir, exist_ok=True)
+        os.makedirs("data", exist_ok=True)
+        filepath = f"data/{ticker}_polygon_data.csv"
+        df.to_csv(filepath)
+        print(f"[INFO] Saved data to {filepath}")  
 
-        filepath = os.path.join(data_dir, "stock_data.csv")
-        df.to_csv(filepath, index=False)
-
-        print(f"[INFO] Saved data to {filepath}")
-        print(f"[DEBUG] Absolute path: {os.path.abspath(filepath)}")
-
-    return df
+    return df[['Close']]

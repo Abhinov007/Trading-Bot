@@ -11,5 +11,4 @@ def calculate_var(ticker: str, start: str, end: str, confidence_level: float = 0
     
     # Calculate the historical 95% VaR (5th percentile)
     var = df['Daily Return'].quantile(1 - confidence_level)
-    
     return var

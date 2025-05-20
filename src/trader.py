@@ -1,27 +1,65 @@
-# src/trader.py
+from alpaca_trade_api.rest import REST
+from config import ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL
 
-def execute_trade(signal: str, ticker: str, amount: float = 1.0):
-    """
-    Simulates trade execution.
-    
-    Args:
-        signal (str): 'Buy' or 'Sell'
-        ticker (str): Stock ticker symbol
-        amount (float): Number of shares or notional amount (mock)
+# Initialize Alpaca API
+api = REST('PK2HLD0UI5D3D4P9QKZB', '8YzZfg0ASSaV4mduMlr0NgeJNFoDd998pa05udin', base_url='https://paper-api.alpaca.markets')
 
-    Returns:
-        dict: Mock trade confirmation
+def get_account_status():
+    try:
+        account = api.get_account()
+        return {
+            "status": "success",
+            "account_status": account.status,
+            "buying_power": account.buying_power,
+            "equity": account.equity,
+            "cash": account.cash
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+def execute_trade(signal: str, ticker: str, qty: int = 1):
     """
+    Executes a real trade via Alpaca API if signal is 'Buy' or 'Sell'.
+    Returns message for 'Hold' signal.
+    """
+    if signal == "Hold":
+        return {
+            "status": "skipped",
+            "message": f"No trade executed. Signal is '{signal}'.",
+            "ticker": ticker,
+            "action": signal,
+            "qty": 0
+        }
+
     if signal not in ["Buy", "Sell"]:
-        raise ValueError("Invalid signal. Must be 'Buy' or 'Sell'.")
+        raise ValueError("Signal must be 'Buy' or 'Sell' or 'Hold'.")
 
-    # In a real system, connect to broker API here (e.g., Alpaca, Binance)
-    print(f"[MOCK TRADE] {signal} {amount} of {ticker}")
+    try:
+        order = api.submit_order(
+            symbol=ticker,
+            qty=qty,
+            side=signal.lower(),
+            type='market',
+            time_in_force='gtc'
+        )
 
-    return {
-        "status": "success",
-        "action": signal,
-        "ticker": ticker,
-        "amount": amount,
-        "message": f"Mock {signal} order executed for {ticker}"
-    }
+        return {
+            "status": "success",
+            "action": signal,
+            "ticker": ticker,
+            "qty": qty,
+            "message": f"{signal} order submitted for {ticker}",
+            "order_id": order.id
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Trade execution failed: {str(e)}",
+            "ticker": ticker,
+            "action": signal,
+            "qty": qty
+        }

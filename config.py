@@ -1,16 +1,17 @@
-# src/config.py
+from dotenv import load_dotenv
+import os
 
-# Ticker and time window settings
-TICKER = "AAPL"
-INTERVAL = "5m"
+load_dotenv()
+
+POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
+ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
+ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL")
+
+# Optional if you want fixed params
+INTERVAL = "5"
 PERIOD = "5d"
 TIME_STEP = 50
-
-# Date range settings
-START_DATE = "2010-01-01"
-END_DATE = "2025-01-01"
-
-# Model settings
-EPOCHS = 10
-BATCH_SIZE = 32
 MODEL_PATH = "models/lstm_model.h5"
+START_DATE = "2024-05-01"
+END_DATE = "2024-05-10"
