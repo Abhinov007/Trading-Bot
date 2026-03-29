@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx vite:*)",
+      "Bash(pip install:*)",
+      "Bash(python -c \"import uvicorn; print\\(''uvicorn ok''\\)\")",
+      "Bash(where python:*)",
+      "Bash(python -c \"import sys; print\\(sys.executable\\); import uvicorn; print\\(''uvicorn:'', uvicorn.__version__\\)\")",
+      "Bash(curl -s http://127.0.0.1:8000/)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(curl -s http://127.0.0.1:8000/docs)",
+      "Bash(netstat -ano)",
+      "Bash(findstr :8000)",
+      "Bash(python -m pip install matplotlib pandas scikit-learn ta python-dotenv requests fastapi uvicorn motor pymongo bcrypt)",
+      "Bash(python -c \"import matplotlib, pandas, sklearn, ta, dotenv, motor; print\\(''All core modules OK''\\)\")",
+      "Bash(python -m pip install --target \"C:\\\\Python310\\\\Lib\\\\site-packages\" matplotlib pandas scikit-learn ta python-dotenv motor pymongo bcrypt)",
+      "Bash(python -c \"import main\")",
+      "Bash(python -m pip install --target \"C:\\\\Python310\\\\Lib\\\\site-packages\" tensorflow)"
+    ]
+  }
+}
