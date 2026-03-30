@@ -28,22 +28,31 @@ from src.models import Transaction
 from fastapi import Request
 from src.mongo_crud import record_transaction
 from fastapi.responses import JSONResponse
-from src.mongo_crud import get_all_transactions,get_user_by_email
+from src.mongo_crud import get_all_transactions, get_user_by_email, get_transactions_by_email
 from src.auth import hash_password
 from src.db import db
 from src.models import LoginRequest
 from src.mongo_crud import authenticate_user
 from bson import ObjectId
+from sklearn.metrics import mean_squared_error, f1_score
+import numpy as np
 
+print("Starting Stock Trading Bot API...")
 app = FastAPI(
     title="Stock Trading Bot API",
     description="Predict stock prices and generate trading signals using an LSTM model.",
     version="1.0.0"
 )
 
+origins = [
+    "http://localhost:3000",   # Next.js frontend
+    "http://127.0.0.1:3000",
+    "http://localhost:5173"   # Sometimes frontend uses 127.0.0.1
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -120,35 +129,51 @@ async def predict_with_plot(
     last_actual = float(y_real[-1][0])
     signal = generate_signal(last_prediction, last_actual)
 
-    # Plot actual vs predicted
-    plt.figure(figsize=(10, 5))
-    plt.plot(y_real, label="Actual")
-    plt.plot(predictions_real, label="Predicted")
-    plt.legend()
-    plt.title(f"{ticker.upper()} - Predicted vs Actual")
-    plt.grid(True)
+    # === 📈 RMSE Calculation ===
+    rmse = np.sqrt(mean_squared_error(y_real, predictions_real))
 
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close()
-    buf.seek(0)
-    img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+    # === ✅ F1 Score Calculation (directional movement classification) ===
+    actual_diff = np.diff(y_real.flatten())
+    predicted_diff = np.diff(predictions_real.flatten())
 
+    y_true_cls = (actual_diff > 0).astype(int)
+    y_pred_cls = (predicted_diff > 0).astype(int)
 
-    # Calculate VaR
+    try:
+        f1 = f1_score(y_true_cls, y_pred_cls)
+    except:
+        f1 = None
+
+    # === 📊 Convert Actual & Predicted to JSON data for chart ===
+    chart_data = [
+        {
+            "index": int(i),
+            "actual": float(y_real[i][0]),
+            "predicted": float(predictions_real[i][0])
+        }
+        for i in range(len(y_real))
+    ]
+
+    # === 💼 Value at Risk ===
     try:
         var = calculate_var(ticker, START_DATE, END_DATE, confidence_level)
+        if var is None:
+            raise ValueError("VaR calculation returned None")
     except Exception as e:
-        var = None
+        print(f"[ERROR] VaR calculation failed: {e}")
+        var = 0.0
 
     return sanitize_json({
         "ticker": ticker.upper(),
         "current_price": last_actual,
         "predicted_price": last_prediction,
         "signal": signal,
-        "plot_base64": img_base64,
-        "VaR_95_percent": var
+        "chart_data": chart_data,   # 👈 instead of base64 image
+        "VaR_95_percent": var,
+        "rmse": round(rmse, 4),
+        "f1_score": round(f1, 4) if f1 is not None else None
     })
+
 
 
 # ✅ 5. Stock Summary Endpoint
@@ -197,8 +222,10 @@ async def execute_trade_endpoint(
 async def record_transaction_endpoint(trade_response: dict = Body(...)):
     try:
         trade_result = trade_response.get("trade_result", trade_response)  # support direct trade_result or wrapped in "trade_result"
+        email = trade_response.get("email") or trade_result.get("email")
         
         transaction = Transaction(
+            email=email,
             action=trade_result.get("action"),
             ticker=trade_result.get("ticker"),
             quantity=trade_result.get("qty"),
@@ -221,6 +248,18 @@ from src.mongo_crud import get_all_transactions
 async def get_transactions():
     try:
         transactions = await get_all_transactions()
+        for tx in transactions:
+            tx["_id"] = str(tx["_id"])
+            if "time" in tx:
+                tx["time"] = tx["time"].isoformat()
+        return {"status": "success", "data": transactions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch transactions: {str(e)}")
+
+@app.get("/transactions/by-email")
+async def get_transactions_for_email(email: str = Query(..., description="Account email to filter transactions")):
+    try:
+        transactions = await get_transactions_by_email(email)
         for tx in transactions:
             tx["_id"] = str(tx["_id"])
             if "time" in tx:

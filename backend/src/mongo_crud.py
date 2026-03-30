@@ -21,6 +21,10 @@ async def get_all_transactions():
     cursor = db.transactions.find({})
     return await cursor.to_list(length=100)
 
+async def get_transactions_by_email(email: str):
+    cursor = db.transactions.find({"email": email})
+    return await cursor.to_list(length=100)
+
 
 async def authenticate_user(email: str, password: str):
     user = await db.users.find_one({"email": email})

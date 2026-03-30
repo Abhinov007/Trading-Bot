@@ -20,6 +20,7 @@ class User(BaseModel):
 # Transaction model
 class Transaction(BaseModel):
     id: Optional[str] = Field(default=None) 
+    email: Optional[EmailStr] = None
     action: str       # "Buy" or "Sell"
     ticker: str
     quantity: float
