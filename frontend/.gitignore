@@ -43,3 +43,13 @@ next-env.d.ts
 # logs
 *.log
 frontend.log
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
