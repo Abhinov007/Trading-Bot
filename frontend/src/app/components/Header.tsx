@@ -22,7 +22,7 @@ export default function Header({ onSearchResult, onLoadingChange }: HeaderProps)
     setError(null)
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/predict?ticker=${searchQuery.trim().toUpperCase()}`)
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/predict?ticker=${searchQuery.trim().toUpperCase()}`)
       const result = await res.json()
       if (!res.ok) throw new Error(result.detail || "Failed to fetch stock data")
       onSearchResult(result)

@@ -8,7 +8,7 @@ const ImageDisplay = ({ stock }) => {
     const fetchPlot = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`http://127.0.0.1:8000/predict?ticker=${stock}`);
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/predict?ticker=${stock}`);
         const data = await response.json();
         setPlotBase64(data.plot_base64);
       } catch (error) {

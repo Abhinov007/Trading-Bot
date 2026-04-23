@@ -18,7 +18,10 @@ def generate_signal(predicted: float, current: float, threshold: float = 0.01) -
     print(f"[DEBUG] Predicted: {predicted:.2f}, Current: {current:.2f}, "
           f"Buy if > {upper_bound:.2f}, Sell if < {lower_bound:.2f}")
 
+    # ✅ FIXED
     if predicted > upper_bound:
         return "Buy"
-    else:
+    elif predicted < lower_bound:
         return "Sell"
+    else:
+        return "Hold"   # ← now actually works

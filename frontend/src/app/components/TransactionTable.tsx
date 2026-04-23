@@ -25,7 +25,7 @@ export default function TransactionTable() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch("http://127.0.0.1:8000/transactions")
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/transactions`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.detail || "Failed to fetch transactions")
       setTransactions(json.data || [])

@@ -1,39 +1,36 @@
 import matplotlib
 matplotlib.use("Agg")  # Prevent Tkinter-related thread issues
 import matplotlib.pyplot as plt
-from fastapi import FastAPI, Query,HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+import re
 import pandas as pd
 import os
 import io
 import base64
 import math
-from src.trader import execute_trade
+from fastapi import FastAPI, Query, HTTPException, Body, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from src.trader import execute_trade, get_account_status
 from src.stock_summary import get_stock_summary
 from src.data_loader import load_data
 from src.feature_engineering import add_technical_indicators
 from src.preprocessing import scale_data, create_sequences
 from src.model import load_model
 from src.signal_generator import generate_signal
-from config import INTERVAL, PERIOD, TIME_STEP, MODEL_PATH, START_DATE, END_DATE
+from config import INTERVAL, PERIOD, TIME_STEP, MODEL_PATH, START_DATE, END_DATE, ALLOWED_ORIGINS
 from src.stock_stats import get_daily_return, calculate_var
-from src.trader import get_account_status
-from src.models import User, Transaction
-from src.models import UserCreate, User  # make sure UserCreate is imported
+from src.models import UserCreate, User, Transaction, LoginRequest
 from bson import ObjectId
-from src.mongo_crud import create_user
-from fastapi import FastAPI, Body
-from fastapi import APIRouter, HTTPException
-from src.models import Transaction
-from fastapi import Request
-from src.mongo_crud import record_transaction
-from fastapi.responses import JSONResponse
-from src.mongo_crud import get_all_transactions,get_user_by_email
+from src.mongo_crud import create_user, record_transaction, get_all_transactions, get_user_by_email, authenticate_user
 from src.auth import hash_password
 from src.db import db
-from src.models import LoginRequest
-from src.mongo_crud import authenticate_user
-from bson import ObjectId
+
+TICKER_RE = re.compile(r'^[A-Z]{1,5}$')
+
+limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="Stock Trading Bot API",
@@ -41,9 +38,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -110,10 +110,15 @@ def sanitize_json(obj):
 
 
 @app.get("/predict")
+@limiter.limit("10/minute")
 async def predict_with_plot(
+    request: Request,
     ticker: str = Query(..., description="Stock ticker symbol (e.g., AAPL, GOOG)"),
     confidence_level: float = Query(0.95, description="Confidence level for VaR calculation")
 ):
+    ticker = ticker.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol. Use 1-5 uppercase letters (e.g. AAPL).")
     y_real, predictions_real = preprocess_and_predict(ticker)
 
     last_prediction = float(predictions_real[-1][0])
@@ -178,12 +183,19 @@ def check_account():
     return get_account_status()
 
 @app.post("/execute-trade")
+@limiter.limit("5/minute")
 async def execute_trade_endpoint(
+    request: Request,
     signal: str = Query(..., description="Trade action signal, e.g., Buy or Sell"),
     ticker: str = Query(..., description="Stock ticker symbol, e.g., AAPL")
 ):
+    ticker = ticker.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol.")
+    if signal not in ("Buy", "Sell", "Hold"):
+        raise HTTPException(status_code=400, detail="Signal must be Buy, Sell, or Hold.")
     try:
-        trade_result = execute_trade(signal, ticker.upper())
+        trade_result = execute_trade(signal, ticker)
         print(f"[ALPACA] Executing {signal} for {ticker.upper()}")
         print(f"Trade result: {trade_result}")
         return {

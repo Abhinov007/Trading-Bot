@@ -8,7 +8,7 @@ const Transaction = () => {
   // Function to fetch transactions
   const fetchTransactions = async () => {
     try {
-      const res = await axios.get("http://localhost:8000/transactions");
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/transactions`);
       setTransactions(res.data.data);
       setLoading(false);
     } catch (err) {

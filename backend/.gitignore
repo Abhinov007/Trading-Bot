@@ -39,7 +39,8 @@ data/*.xlsx
 data/*.json
 data/*.zip
 
-# Environment files (optional)
+# Environment files
+.env
 *.env
 .env.*
 
@@ -59,3 +60,5 @@ checkpoint/
 
 
 src/config.py
+
+
