@@ -9,3 +9,6 @@ requests
 alpaca-trade-api
 pydantic[email]
 slowapi
+pytest
+pytest-asyncio
+httpx
