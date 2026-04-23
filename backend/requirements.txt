@@ -7,4 +7,5 @@ ta
 python-dotenv
 requests
 alpaca-trade-api
+pydantic[email]
 slowapi

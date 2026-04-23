@@ -7,7 +7,7 @@ class UserCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
-    full_name: str
+    full_name: Optional[str] = None
 
 # Model for storing user data (e.g. in DB)
 class User(BaseModel):

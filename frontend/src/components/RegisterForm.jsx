@@ -18,7 +18,7 @@ const RegisterForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/register`, form);
+      const res = await axios.post(`${import.meta.env.VITE_API_URL}/register`, form);
       setMessage(res.data.message);
     } catch (err) {
       setMessage(err.response.data.detail || "Registration failed");

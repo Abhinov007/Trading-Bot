@@ -16,7 +16,7 @@ const LoginForm = ({ onLogin }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/login`, form);
+      const res = await axios.post(`${import.meta.env.VITE_API_URL}/login`, form);
       setMessage(res.data.message);
       onLogin(res.data.user);  // You can store this user in state
     } catch (err) {

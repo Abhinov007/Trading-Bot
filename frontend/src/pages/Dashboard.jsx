@@ -74,7 +74,7 @@ const AuthForm = ({ type }) => {
     setMsg('');
     const endpoint = type === 'login' ? '/login' : '/register';
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${endpoint}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
@@ -214,7 +214,7 @@ const Dashboard = () => {
     setLoading(true);
     setData(null);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/predict?ticker=${ticker}`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/predict?ticker=${ticker}`);
       const result = await res.json();
       setData(result);
     } catch {
@@ -231,13 +231,13 @@ const Dashboard = () => {
     setTradeLoading(true);
     try {
       const execRes = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/execute-trade?signal=${encodeURIComponent(data.signal)}&ticker=${encodeURIComponent(query)}`,
+        `${import.meta.env.VITE_API_URL}/execute-trade?signal=${encodeURIComponent(data.signal)}&ticker=${encodeURIComponent(query)}`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' } }
       );
       const execResult = await execRes.json();
       if (!execRes.ok) throw new Error(execResult.detail || 'Trade execution failed');
 
-      const saveRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/record-transaction`, {
+      const saveRes = await fetch(`${import.meta.env.VITE_API_URL}/record-transaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(execResult),
@@ -255,7 +255,7 @@ const Dashboard = () => {
   /* fetch transactions */
   const fetchTransactions = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/transactions`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/transactions`);
       const result = await res.json();
       setTransactions(result.data || []);
     } catch {

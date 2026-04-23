@@ -18,9 +18,10 @@ from src.stock_summary import get_stock_summary
 from src.data_loader import load_data
 from src.feature_engineering import add_technical_indicators
 from src.preprocessing import scale_data, create_sequences
-from src.model import load_model
+from src.model import load_model as _load_model
 from src.signal_generator import generate_signal
 from config import INTERVAL, PERIOD, TIME_STEP, MODEL_PATH, START_DATE, END_DATE, ALLOWED_ORIGINS
+from contextlib import asynccontextmanager
 from src.stock_stats import get_daily_return, calculate_var
 from src.models import UserCreate, User, Transaction, LoginRequest
 from bson import ObjectId
@@ -32,10 +33,16 @@ TICKER_RE = re.compile(r'^[A-Z]{1,5}$')
 
 limiter = Limiter(key_func=get_remote_address)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.model = _load_model(MODEL_PATH)
+    yield
+
 app = FastAPI(
     title="Stock Trading Bot API",
     description="Predict stock prices and generate trading signals using an LSTM model.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.state.limiter = limiter
@@ -62,32 +69,22 @@ def fetch_data(ticker: str) -> pd.DataFrame:
     print(f"[INFO] Saved data to {filepath}")
     return df
 
-# ✅ 2. Preprocess + Predict using the LSTM model
-def preprocess_and_predict(ticker: str):
+def preprocess_and_predict(ticker: str, model):
     df = fetch_data(ticker)
 
     if isinstance(df.columns, pd.MultiIndex):
-        print("[INFO] MultiIndex detected. Flattening columns...")
         df.columns = ['_'.join(col).strip() for col in df.columns.values]
 
     if "Close" not in df.columns:
         raise KeyError("Expected 'Close' column not found in data.")
 
-    # Add indicators
-    df = df.rename(columns={"Close": f"close_{ticker.lower()}"})  # Required for feature_engineering
+    df = df.rename(columns={"Close": f"close_{ticker.lower()}"})
     df = add_technical_indicators(df)
 
-    # Scale data
     scaler, scaled_df = scale_data(df, column_name=f"close_{ticker.lower()}")
-
-    # Create sequences for LSTM
     X, y_scaled = create_sequences(scaled_df[f"close_{ticker.lower()}"].values, time_step=TIME_STEP)
 
-    # Load model & predict
-    model = load_model(MODEL_PATH)
     predictions_scaled = model.predict(X)
-
-    # Inverse scale the predictions and actuals
     predictions_real = scaler.inverse_transform(predictions_scaled)
     y_real = scaler.inverse_transform(y_scaled.reshape(-1, 1))
 
@@ -119,7 +116,7 @@ async def predict_with_plot(
     ticker = ticker.strip().upper()
     if not TICKER_RE.match(ticker):
         raise HTTPException(status_code=400, detail="Invalid ticker symbol. Use 1-5 uppercase letters (e.g. AAPL).")
-    y_real, predictions_real = preprocess_and_predict(ticker)
+    y_real, predictions_real = preprocess_and_predict(ticker, request.app.state.model)
 
     last_prediction = float(predictions_real[-1][0])
     last_actual = float(y_real[-1][0])
@@ -196,10 +193,10 @@ async def execute_trade_endpoint(
         raise HTTPException(status_code=400, detail="Signal must be Buy, Sell, or Hold.")
     try:
         trade_result = execute_trade(signal, ticker)
-        print(f"[ALPACA] Executing {signal} for {ticker.upper()}")
+        print(f"[ALPACA] Executing {signal} for {ticker}")
         print(f"Trade result: {trade_result}")
         return {
-            "message": f"Trade {signal} executed for {ticker.upper()}",
+            "message": f"Trade {signal} executed for {ticker}",
             "trade_result": trade_result
         }
     except Exception as e:
@@ -226,8 +223,6 @@ async def record_transaction_endpoint(trade_response: dict = Body(...)):
         raise HTTPException(status_code=500, detail=f"Failed to record transaction: {str(e)}")
     
 
-
-from src.mongo_crud import get_all_transactions
 
 @app.get("/transactions")
 async def get_transactions():

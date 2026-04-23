@@ -8,7 +8,7 @@ const Transaction = () => {
   // Function to fetch transactions
   const fetchTransactions = async () => {
     try {
-      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/transactions`);
+      const res = await axios.get(`${import.meta.env.VITE_API_URL}/transactions`);
       setTransactions(res.data.data);
       setLoading(false);
     } catch (err) {
