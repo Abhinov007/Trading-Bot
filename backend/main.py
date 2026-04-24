@@ -7,6 +7,9 @@ import os
 import io
 import base64
 import math
+import asyncio
+import time
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Query, HTTPException, Body, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -37,6 +40,32 @@ from src.db import db
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 TICKER_RE = re.compile(r'^[A-Z]{1,5}$')
+
+TOP_TICKERS = [
+    ("AAPL",  "Apple Inc."),
+    ("MSFT",  "Microsoft Corp."),
+    ("NVDA",  "NVIDIA Corp."),
+    ("GOOGL", "Alphabet Inc."),
+    ("AMZN",  "Amazon.com Inc."),
+    ("META",  "Meta Platforms"),
+    ("TSLA",  "Tesla Inc."),
+    ("AVGO",  "Broadcom Inc."),
+    ("LLY",   "Eli Lilly & Co."),
+    ("JPM",   "JPMorgan Chase"),
+    ("V",     "Visa Inc."),
+    ("WMT",   "Walmart Inc."),
+    ("XOM",   "ExxonMobil Corp."),
+    ("MA",    "Mastercard Inc."),
+    ("UNH",   "UnitedHealth Group"),
+    ("COST",  "Costco Wholesale"),
+    ("PG",    "Procter & Gamble"),
+    ("HD",    "The Home Depot"),
+    ("JNJ",   "Johnson & Johnson"),
+    ("NFLX",  "Netflix Inc."),
+]
+
+_top_stocks_cache: dict = {}   # {"data": [...], "ts": float}
+TOP_STOCKS_TTL = 300            # 5-minute server-side cache
 
 # ── Rate limiter ───────────────────────────────────────────────────────────────
 
@@ -264,6 +293,78 @@ async def get_live_price(request: Request, ticker: str):
         "change_pct": round(change_pct, 2),
         "volume": volume,
     }
+
+# ── Market overview ────────────────────────────────────────────────────────────
+
+def _last_trading_day() -> str:
+    """Return the most recent completed trading weekday as YYYY-MM-DD."""
+    d = datetime.today() - timedelta(days=1)
+    while d.weekday() >= 5:   # skip Saturday (5) and Sunday (6)
+        d -= timedelta(days=1)
+    return d.strftime("%Y-%m-%d")
+
+
+@app.get("/market/top")
+async def get_top_stocks():
+    """Prev-day OHLCV for the top 20 US stocks — single grouped API call, cached 5 min."""
+    import requests as req
+    from config import POLYGON_API_KEY
+
+    if _top_stocks_cache.get("data") and (time.time() - _top_stocks_cache.get("ts", 0)) < TOP_STOCKS_TTL:
+        return {"status": "success", "data": _top_stocks_cache["data"], "cached": True}
+
+    ticker_set  = {t for t, _ in TOP_TICKERS}
+    bars_by_ticker: dict = {}
+
+    # Try up to 5 days back to skip market holidays
+    for days_back in range(1, 6):
+        d = datetime.today() - timedelta(days=days_back)
+        if d.weekday() >= 5:
+            continue
+        date_str = d.strftime("%Y-%m-%d")
+        try:
+            r = req.get(
+                f"https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/{date_str}",
+                params={"adjusted": "true", "apiKey": POLYGON_API_KEY},
+                timeout=15,
+            )
+            if r.ok:
+                raw = r.json().get("results", [])
+                bars_by_ticker = {b["T"]: b for b in raw if b["T"] in ticker_set}
+                if bars_by_ticker:
+                    print(f"[INFO] market/top: loaded {len(bars_by_ticker)} tickers from {date_str}")
+                    break
+                print(f"[WARN] market/top grouped {date_str}: no matching tickers, trying earlier date")
+            else:
+                print(f"[WARN] market/top grouped HTTP {r.status_code}: {r.text[:120]}")
+                break   # 403 / 401 won't improve with a different date
+        except Exception as e:
+            print(f"[WARN] market/top grouped: {e}")
+            break
+
+    results = []
+    for ticker, name in TOP_TICKERS:
+        bar = bars_by_ticker.get(ticker)
+        if bar:
+            close = bar.get("c") or 0
+            open_ = bar.get("o") or close
+            chg   = round(((close - open_) / open_ * 100) if open_ else 0, 2)
+            results.append({
+                "ticker":     ticker,
+                "name":       name,
+                "price":      round(close, 2),
+                "change_pct": chg,
+                "high":       round(bar.get("h") or 0, 2),
+                "low":        round(bar.get("l") or 0, 2),
+                "volume":     int(bar.get("v") or 0),
+            })
+        else:
+            results.append({"ticker": ticker, "name": name, "price": None,
+                            "change_pct": 0, "high": None, "low": None, "volume": 0})
+
+    _top_stocks_cache["data"] = results
+    _top_stocks_cache["ts"]   = time.time()
+    return {"status": "success", "data": results, "cached": False}
 
 # ── Auth endpoints ─────────────────────────────────────────────────────────────
 

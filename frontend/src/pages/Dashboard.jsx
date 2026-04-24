@@ -2,7 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   Search, TrendingUp, TrendingDown, Minus, X,
   Eye, EyeOff, LogIn, UserPlus, RefreshCw, LogOut,
-  Activity, BookmarkPlus, BookmarkCheck, Trash2, Lock
+  Activity, BookmarkPlus, BookmarkCheck, Trash2, Lock,
+  BarChart2
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -215,6 +216,62 @@ const Spinner = ({ size = 'md' }) => {
   return <div className={`${s} border-white/15 border-t-white/70 rounded-full animate-spin`} />;
 };
 
+/* ─── Market Overview (sidebar) ──────────────────────────────────────────── */
+const MarketOverview = ({ stocks, loading, onSelect }) => (
+  <div className="bg-[#0d0d0d] border border-white/[0.06] rounded-2xl overflow-hidden flex flex-col">
+    {/* Header */}
+    <div className="px-4 py-3.5 border-b border-white/[0.05] flex items-center justify-between shrink-0">
+      <h3 className="text-xs font-semibold text-white flex items-center gap-2">
+        <BarChart2 size={13} className="text-blue-400" /> Market Overview
+      </h3>
+      <span className="text-[10px] text-zinc-600">prev-day</span>
+    </div>
+
+    {/* Body */}
+    {loading ? (
+      <div className="flex flex-col items-center justify-center gap-2 py-10">
+        <Spinner />
+        <p className="text-[10px] text-zinc-600">Loading…</p>
+      </div>
+    ) : stocks.length === 0 ? (
+      <div className="py-10 px-4 text-center">
+        <p className="text-[11px] text-zinc-600">Market data unavailable.</p>
+      </div>
+    ) : (
+      <div className="overflow-y-auto divide-y divide-white/[0.03]" style={{ maxHeight: 'calc(100vh - 130px)' }}>
+        {stocks.map((s, i) => {
+          const isUp = s.change_pct >= 0;
+          return (
+            <button
+              key={s.ticker}
+              onClick={() => onSelect(s.ticker)}
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-white/[0.03] transition-colors group text-left"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[10px] text-zinc-700 tabular-nums w-4 shrink-0">{i + 1}</span>
+                <div className="min-w-0">
+                  <p className="font-mono font-semibold text-xs text-white group-hover:text-blue-300 transition-colors leading-none mb-0.5">
+                    {s.ticker}
+                  </p>
+                  <p className="text-[10px] text-zinc-600 truncate leading-none">{s.name}</p>
+                </div>
+              </div>
+              <div className="text-right shrink-0 ml-3">
+                <p className="text-xs font-semibold tabular-nums text-zinc-100 leading-none mb-0.5">
+                  {s.price != null ? `$${s.price.toFixed(2)}` : '—'}
+                </p>
+                <p className={`text-[10px] font-medium tabular-nums leading-none ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {s.price != null ? `${isUp ? '+' : ''}${s.change_pct.toFixed(2)}%` : 'N/A'}
+                </p>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    )}
+  </div>
+);
+
 /* ─── Auth Gate Banner ───────────────────────────────────────────────────── */
 const AuthGate = ({ message, onSignIn }) => (
   <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
@@ -246,6 +303,8 @@ const Dashboard = () => {
   const [watchlist, setWatchlist]     = useState([]);
   const [livePrices, setLivePrices]   = useState({});
   const [watchMsg, setWatchMsg]       = useState('');
+  const [marketStocks, setMarketStocks] = useState([]);
+  const [marketLoading, setMarketLoading] = useState(true);
 
   // ── Auth state ────────────────────────────────────────────────────────────
   const [token, setToken]           = useState(() => localStorage.getItem('token') || null);
@@ -388,6 +447,23 @@ const Dashboard = () => {
 
   /* ── Effects ───────────────────────────────────────────────────────────── */
   useEffect(() => { fetchData(query); }, [query]);
+
+  // Fetch top-20 market data once on mount; backend caches for 5 min
+  useEffect(() => {
+    const load = async () => {
+      setMarketLoading(true);
+      try {
+        const res = await fetch(`${API}/market/top`);
+        const result = await res.json();
+        if (res.ok) setMarketStocks(result.data || []);
+      } catch { /* silent */ } finally {
+        setMarketLoading(false);
+      }
+    };
+    load();
+    const id = setInterval(load, 300000); // re-fetch every 5 min
+    return () => clearInterval(id);
+  }, []);
 
   // When user logs in/out — refresh protected data
   useEffect(() => {
@@ -549,7 +625,10 @@ const Dashboard = () => {
       </header>
 
       {/* ── Main Content ── */}
-      <main className="px-6 py-6 max-w-[1400px] mx-auto space-y-5">
+      <main className="px-6 py-6 max-w-[1400px] mx-auto flex gap-5 items-start">
+
+        {/* ── Left column ── */}
+        <div className="flex-1 min-w-0 space-y-5">
         {/* Row 1: Chart + Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Chart panel */}
@@ -755,7 +834,7 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Row 3: Trade History */}
+        {/* Row 4: Trade History */}
         <div className="bg-[#0d0d0d] border border-white/[0.06] rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-white/[0.05] flex items-center justify-between">
             <h3 className="text-sm font-semibold text-white">Trade History</h3>
@@ -836,6 +915,21 @@ const Dashboard = () => {
             </div>
           )}
         </div>
+        </div>{/* end left column */}
+
+        {/* ── Right sidebar: Market Overview ── */}
+        <div className="hidden xl:block w-64 shrink-0 sticky top-[65px]">
+          <MarketOverview
+            stocks={marketStocks}
+            loading={marketLoading}
+            onSelect={(ticker) => {
+              setQuery(ticker);
+              setInputValue(ticker);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          />
+        </div>
+
       </main>
 
       {/* ── Auth Modals ── */}
