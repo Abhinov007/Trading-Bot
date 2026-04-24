@@ -19,7 +19,8 @@ class User(BaseModel):
 
 # Transaction model
 class Transaction(BaseModel):
-    id: Optional[str] = Field(default=None) 
+    id: Optional[str] = Field(default=None)
+    user_email: Optional[str] = None   # owner of this transaction
     action: str       # "Buy" or "Sell"
     ticker: str
     quantity: float
@@ -33,4 +34,8 @@ class Transaction(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+class WatchlistItem(BaseModel):
+    ticker: str
+    added_at: datetime = Field(default_factory=datetime.utcnow)
 

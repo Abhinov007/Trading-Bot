@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+import os
 
-SECRET_KEY = "trading"  # replace with env secret
+SECRET_KEY = os.getenv("SECRET_KEY", "trading")  # override via .env
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 

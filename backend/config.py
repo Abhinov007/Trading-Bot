@@ -17,4 +17,4 @@ PERIOD = "5d"
 TIME_STEP = 50
 MODEL_PATH = "models/lstm_model.h5"
 END_DATE = datetime.today().strftime("%Y-%m-%d")
-START_DATE = (datetime.today() - timedelta(days=365)).strftime("%Y-%m-%d")
+START_DATE = (datetime.today() - timedelta(days=90)).strftime("%Y-%m-%d")
