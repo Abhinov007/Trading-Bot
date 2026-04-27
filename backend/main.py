@@ -11,13 +11,16 @@ import asyncio
 import time
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Query, HTTPException, Body, Request, Depends
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from src.trader import execute_trade, get_account_status
+from src.trader import execute_trade, get_account_status, get_positions
+from src.news_sentiment import fetch_news
+from src.backtester import run_backtest
 from src.stock_summary import get_stock_summary
 from src.data_loader import load_data
 from src.feature_engineering import add_technical_indicators
@@ -27,13 +30,14 @@ from src.signal_generator import generate_signal
 from config import INTERVAL, PERIOD, TIME_STEP, MODEL_PATH, START_DATE, END_DATE, ALLOWED_ORIGINS
 from contextlib import asynccontextmanager
 from src.stock_stats import get_daily_return, calculate_var
-from src.models import UserCreate, User, Transaction, LoginRequest
 from bson import ObjectId
 from src.mongo_crud import (
     create_user, record_transaction, get_user_transactions,
     get_user_by_email, authenticate_user,
     get_watchlist, add_to_watchlist, remove_from_watchlist,
+    get_alerts, create_alert, delete_alert, mark_alert_triggered,
 )
+from src.models import UserCreate, User, Transaction, LoginRequest, PriceAlert
 from src.auth import hash_password, create_access_token, decode_access_token
 from src.db import db
 
@@ -229,6 +233,54 @@ def stock_stats(
 @app.get("/account-status")
 def check_account():
     return get_account_status()
+
+
+# ── Backtesting ────────────────────────────────────────────────────────────────
+
+@app.get("/backtest")
+@limiter.limit("5/minute")
+async def backtest(
+    request: Request,
+    ticker: str = Query(..., description="Stock ticker symbol"),
+):
+    ticker = ticker.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol.")
+    try:
+        y_real, predictions = preprocess_and_predict(ticker, request.app.state.model)
+        result = run_backtest(y_real, predictions)
+        return sanitize_json({"ticker": ticker, **result})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Backtest failed: {str(e)}")
+
+# ── News + Sentiment ───────────────────────────────────────────────────────────
+
+_news_cache: dict = {}    # ticker → {"data": [...], "ts": float}
+NEWS_TTL = 600            # 10-minute cache (news doesn't change that fast)
+
+@app.get("/news/{ticker}")
+@limiter.limit("20/minute")
+async def get_news(request: Request, ticker: str):
+    ticker = ticker.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol.")
+
+    cached = _news_cache.get(ticker)
+    if cached and (time.time() - cached["ts"]) < NEWS_TTL:
+        return {"status": "success", "ticker": ticker, "articles": cached["data"], "cached": True}
+
+    articles = fetch_news(ticker, limit=8)
+    _news_cache[ticker] = {"data": articles, "ts": time.time()}
+    return {"status": "success", "ticker": ticker, "articles": articles, "cached": False}
+
+
+@app.get("/portfolio")
+async def get_portfolio(current_user: str = Depends(get_current_user)):
+    """Open positions with unrealised P&L pulled live from Alpaca paper account."""
+    result = get_positions()
+    if result["status"] == "error":
+        raise HTTPException(status_code=503, detail=f"Could not fetch portfolio: {result['message']}")
+    return result
 
 
 @app.get("/price/{ticker}")
@@ -488,3 +540,47 @@ async def remove_ticker_from_watchlist(
     if not removed:
         raise HTTPException(status_code=404, detail=f"{ticker} not found in watchlist.")
     return {"message": f"{ticker} removed from watchlist."}
+
+# ── Price alerts ───────────────────────────────────────────────────────────────
+
+class AlertCreate(BaseModel):
+    ticker: str
+    target_price: float
+    condition: str   # "above" | "below"
+
+@app.get("/alerts")
+async def list_alerts(current_user: str = Depends(get_current_user)):
+    items = await get_alerts(current_user)
+    return {"status": "success", "data": items}
+
+@app.post("/alerts")
+async def add_alert(
+    body: AlertCreate,
+    current_user: str = Depends(get_current_user),
+):
+    ticker = body.ticker.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol.")
+    if body.condition not in ("above", "below"):
+        raise HTTPException(status_code=400, detail="Condition must be 'above' or 'below'.")
+    alert = PriceAlert(
+        ticker=ticker,
+        target_price=body.target_price,
+        condition=body.condition,
+        user_email=current_user,
+    )
+    alert_id = await create_alert(alert)
+    return {"message": "Alert created.", "alert_id": alert_id}
+
+@app.delete("/alerts/{alert_id}")
+async def remove_alert(alert_id: str, current_user: str = Depends(get_current_user)):
+    removed = await delete_alert(alert_id, current_user)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Alert not found.")
+    return {"message": "Alert deleted."}
+
+@app.post("/alerts/{alert_id}/check")
+async def check_alert(alert_id: str, current_user: str = Depends(get_current_user)):
+    """Mark an alert as triggered (called by the frontend when threshold is crossed)."""
+    await mark_alert_triggered(alert_id)
+    return {"message": "Alert marked as triggered."}

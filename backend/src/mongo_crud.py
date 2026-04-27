@@ -1,5 +1,5 @@
 from src.db import db
-from src.models import User, Transaction, WatchlistItem
+from src.models import User, Transaction, WatchlistItem, PriceAlert
 from src.utils import verify_password
 
 # ── Users ──────────────────────────────────────────────────────────────────────
@@ -47,3 +47,25 @@ async def add_to_watchlist(ticker: str, user_email: str) -> bool:
 async def remove_from_watchlist(ticker: str, user_email: str) -> bool:
     result = await db.watchlist.delete_one({"ticker": ticker, "user_email": user_email})
     return result.deleted_count > 0
+
+# ── Price Alerts ───────────────────────────────────────────────────────────────
+
+async def get_alerts(user_email: str) -> list:
+    cursor = db.alerts.find({"user_email": user_email, "triggered": False})
+    items = await cursor.to_list(length=100)
+    for item in items:
+        item["_id"] = str(item["_id"])
+    return items
+
+async def create_alert(alert: PriceAlert) -> str:
+    result = await db.alerts.insert_one(alert.dict())
+    return str(result.inserted_id)
+
+async def delete_alert(alert_id: str, user_email: str) -> bool:
+    from bson import ObjectId
+    result = await db.alerts.delete_one({"_id": ObjectId(alert_id), "user_email": user_email})
+    return result.deleted_count > 0
+
+async def mark_alert_triggered(alert_id: str) -> None:
+    from bson import ObjectId
+    await db.alerts.update_one({"_id": ObjectId(alert_id)}, {"$set": {"triggered": True}})

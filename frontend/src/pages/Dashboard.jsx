@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Search, TrendingUp, TrendingDown, Minus, X,
   Eye, EyeOff, LogIn, UserPlus, RefreshCw, LogOut,
@@ -272,6 +273,87 @@ const MarketOverview = ({ stocks, loading, onSelect }) => (
   </div>
 );
 
+/* ─── News Panel ─────────────────────────────────────────────────────────── */
+const sentimentConfig = {
+  Bullish: { cls: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20', dot: 'bg-emerald-400' },
+  Bearish: { cls: 'text-red-400 bg-red-400/10 border-red-400/20',             dot: 'bg-red-400' },
+  Neutral: { cls: 'text-zinc-400 bg-zinc-400/10 border-zinc-400/20',          dot: 'bg-zinc-500' },
+};
+
+const NewsPanel = ({ ticker, articles, loading }) => {
+  const fmtDate = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  // Overall sentiment summary
+  const counts = articles.reduce((acc, a) => {
+    acc[a.sentiment] = (acc[a.sentiment] || 0) + 1; return acc;
+  }, {});
+  const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+  return (
+    <div className="bg-[#0d0d0d] border border-white/[0.06] rounded-2xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-white/[0.05] flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+          <Activity size={14} className="text-amber-400" />
+          News {ticker ? `· ${ticker}` : ''}
+        </h3>
+        {dominant && !loading && (
+          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${sentimentConfig[dominant]?.cls}`}>
+            <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${sentimentConfig[dominant]?.dot}`} />
+            {dominant} sentiment
+          </span>
+        )}
+      </div>
+
+      {!ticker ? (
+        <div className="px-5 py-8 text-center">
+          <p className="text-xs text-zinc-600">Search a stock to load news.</p>
+        </div>
+      ) : loading ? (
+        <div className="flex justify-center py-8"><Spinner /></div>
+      ) : articles.length === 0 ? (
+        <div className="px-5 py-8 text-center">
+          <p className="text-xs text-zinc-600">No recent news found for {ticker}.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-white/[0.03]">
+          {articles.map((a, i) => {
+            const cfg = sentimentConfig[a.sentiment] ?? sentimentConfig.Neutral;
+            return (
+              <a
+                key={i}
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block px-5 py-3.5 hover:bg-white/[0.018] transition-colors group"
+              >
+                <div className="flex items-start gap-3">
+                  <span className={`mt-1 shrink-0 w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-zinc-200 group-hover:text-white transition-colors leading-snug line-clamp-2">
+                      {a.title}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${cfg.cls}`}>
+                        {a.sentiment} {a.compound > 0 ? `+${a.compound}` : a.compound}
+                      </span>
+                      {a.source && <span className="text-[10px] text-zinc-600">{a.source}</span>}
+                      <span className="text-[10px] text-zinc-700">{fmtDate(a.published_utc)}</span>
+                    </div>
+                  </div>
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ─── Auth Gate Banner ───────────────────────────────────────────────────── */
 const AuthGate = ({ message, onSignIn }) => (
   <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
@@ -305,6 +387,12 @@ const Dashboard = () => {
   const [watchMsg, setWatchMsg]       = useState('');
   const [marketStocks, setMarketStocks] = useState([]);
   const [marketLoading, setMarketLoading] = useState(true);
+  const [news, setNews]                 = useState([]);
+  const [newsLoading, setNewsLoading]   = useState(false);
+  const [alerts, setAlerts]             = useState([]);
+  const [alertInput, setAlertInput]     = useState('');
+  const [alertCondition, setAlertCondition] = useState('above');
+  const [triggeredAlerts, setTriggeredAlerts] = useState([]);  // toasts
 
   // ── Auth state ────────────────────────────────────────────────────────────
   const [token, setToken]           = useState(() => localStorage.getItem('token') || null);
@@ -326,6 +414,9 @@ const Dashboard = () => {
     setTransactions([]);
     setWatchlist([]);
     setLivePrices({});
+    setPortfolio(null);
+    setAlerts([]);
+    setTriggeredAlerts([]);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
   };
@@ -374,7 +465,7 @@ const Dashboard = () => {
       if (!saveRes.ok) throw new Error(saveResult.detail || 'Save failed');
 
       setTradeMsg(saveResult.message || 'Trade recorded.');
-      fetchTransactions(); // refresh list immediately
+      fetchTransactions();  // refresh list immediately
     } catch (err) {
       setTradeMsg(err.message || 'Trade failed.');
     } finally {
@@ -429,6 +520,63 @@ const Dashboard = () => {
     } catch { /* silent */ }
   }, []);
 
+
+  /* ── Price Alerts (protected) ──────────────────────────────────────────── */
+  const fetchAlerts = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API}/alerts`, { headers: authHeaders(token) });
+      if (res.ok) setAlerts((await res.json()).data || []);
+    } catch { /* silent */ }
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const createAlert = async () => {
+    if (!token || !query || !alertInput) return;
+    const price = parseFloat(alertInput);
+    if (isNaN(price) || price <= 0) return;
+    try {
+      const res = await fetch(`${API}/alerts`, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({ ticker: query, target_price: price, condition: alertCondition }),
+      });
+      if (res.ok) { setAlertInput(''); fetchAlerts(); }
+    } catch { /* silent */ }
+  };
+
+  const deleteAlert = async (id) => {
+    if (!token) return;
+    try {
+      await fetch(`${API}/alerts/${id}`, { method: 'DELETE', headers: authHeaders(token) });
+      setAlerts(prev => prev.filter(a => a._id !== id));
+    } catch { /* silent */ }
+  };
+
+  // Check all active alerts against live prices every 30s
+  useEffect(() => {
+    if (!token || alerts.length === 0) return;
+    const check = async () => {
+      for (const alert of alerts) {
+        try {
+          const res = await fetch(`${API}/price/${alert.ticker}`);
+          if (!res.ok) continue;
+          const { price } = await res.json();
+          if (price == null) continue;
+          const hit = alert.condition === 'above' ? price >= alert.target_price
+                                                   : price <= alert.target_price;
+          if (hit) {
+            setTriggeredAlerts(prev => [...prev, { ...alert, current: price, id: Date.now() }]);
+            await fetch(`${API}/alerts/${alert._id}/check`, { method: 'POST', headers: authHeaders(token) });
+            setAlerts(prev => prev.filter(a => a._id !== alert._id));
+          }
+        } catch { /* silent */ }
+      }
+    };
+    check();
+    const id = setInterval(check, 30000);
+    return () => clearInterval(id);
+  }, [alerts, token]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ── Transactions (protected) ──────────────────────────────────────────── */
   const fetchTransactions = useCallback(async () => {
     if (!token) return;
@@ -447,6 +595,17 @@ const Dashboard = () => {
 
   /* ── Effects ───────────────────────────────────────────────────────────── */
   useEffect(() => { fetchData(query); }, [query]);
+
+  useEffect(() => {
+    if (!query) { setNews([]); return; }
+    setNewsLoading(true);
+    fetch(`${API}/news/${query}`)
+      .then(r => r.json())
+      .then(d => setNews(d.articles || []))
+      .catch(() => setNews([]))
+      .finally(() => setNewsLoading(false));
+  }, [query]);
+
 
   // Fetch top-20 market data once on mount; backend caches for 5 min
   useEffect(() => {
@@ -470,9 +629,11 @@ const Dashboard = () => {
     if (token) {
       fetchTransactions();
       fetchWatchlist();
+      fetchAlerts();
     } else {
       setTransactions([]);
       setWatchlist([]);
+      setAlerts([]);
     }
   }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -542,6 +703,16 @@ const Dashboard = () => {
           </div>
           <span className="font-semibold text-sm tracking-tight">AlphaBot</span>
         </div>
+
+        {/* Nav links */}
+        <nav className="hidden sm:flex items-center gap-1 shrink-0">
+          <Link
+            to="/portfolio"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/[0.05] border border-transparent hover:border-white/10 rounded-xl transition-all"
+          >
+            <TrendingUp size={12} className="text-violet-400" /> Portfolio
+          </Link>
+        </nav>
 
         {/* Search bar */}
         <div className="flex-1 max-w-lg relative">
@@ -767,6 +938,48 @@ const Dashboard = () => {
                     </button>
                   )}
                   {watchMsg && <p className="text-xs text-center text-zinc-500">{watchMsg}</p>}
+
+                  {/* Price Alert creator */}
+                  {currentUser && query && (
+                    <div className="border-t border-white/[0.05] pt-3 space-y-2">
+                      <p className="text-[10px] text-zinc-600 uppercase tracking-wider">Price Alert</p>
+                      <div className="flex gap-1.5">
+                        <select
+                          value={alertCondition}
+                          onChange={e => setAlertCondition(e.target.value)}
+                          className="bg-white/[0.04] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-white/20 shrink-0"
+                        >
+                          <option value="above">Above</option>
+                          <option value="below">Below</option>
+                        </select>
+                        <input
+                          type="number"
+                          value={alertInput}
+                          onChange={e => setAlertInput(e.target.value)}
+                          placeholder="Target price"
+                          className="flex-1 bg-white/[0.04] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white placeholder:text-zinc-700 focus:outline-none focus:border-white/20 min-w-0"
+                        />
+                        <button
+                          onClick={createAlert}
+                          disabled={!alertInput}
+                          className="shrink-0 bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/30 text-violet-300 text-xs px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                        >
+                          Set
+                        </button>
+                      </div>
+                      {/* Active alerts for this ticker */}
+                      {alerts.filter(a => a.ticker === query).map(a => (
+                        <div key={a._id} className="flex items-center justify-between bg-white/[0.03] border border-white/[0.06] rounded-lg px-2.5 py-1.5">
+                          <span className="text-[11px] text-zinc-400">
+                            {a.condition === 'above' ? '↑' : '↓'} ${a.target_price.toFixed(2)}
+                          </span>
+                          <button onClick={() => deleteAlert(a._id)} className="text-zinc-700 hover:text-red-400 transition-colors">
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
@@ -834,7 +1047,10 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Row 4: Trade History */}
+        {/* Row 2: News Sentiment */}
+        <NewsPanel ticker={query} articles={news} loading={newsLoading} />
+
+        {/* Trade History */}
         <div className="bg-[#0d0d0d] border border-white/[0.06] rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-white/[0.05] flex items-center justify-between">
             <h3 className="text-sm font-semibold text-white">Trade History</h3>
@@ -931,6 +1147,34 @@ const Dashboard = () => {
         </div>
 
       </main>
+
+      {/* ── Alert Toasts ── */}
+      {triggeredAlerts.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2">
+          {triggeredAlerts.map((a) => (
+            <div
+              key={a.id}
+              className="flex items-center gap-3 bg-[#111] border border-violet-500/40 rounded-xl px-4 py-3 shadow-2xl min-w-[260px]"
+            >
+              <div className="w-2 h-2 rounded-full bg-violet-400 shrink-0 animate-pulse" />
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-white">
+                  🔔 {a.ticker} alert triggered
+                </p>
+                <p className="text-[11px] text-zinc-400">
+                  Price {a.condition === 'above' ? 'reached' : 'dropped to'} ${a.current?.toFixed(2)} (target ${a.target_price?.toFixed(2)})
+                </p>
+              </div>
+              <button
+                onClick={() => setTriggeredAlerts(prev => prev.filter(t => t.id !== a.id))}
+                className="text-zinc-600 hover:text-white transition-colors"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Auth Modals ── */}
       <Modal isOpen={!!authModal} onClose={() => setAuthModal(null)}>

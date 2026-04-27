@@ -39,3 +39,11 @@ class WatchlistItem(BaseModel):
     ticker: str
     added_at: datetime = Field(default_factory=datetime.utcnow)
 
+class PriceAlert(BaseModel):
+    ticker: str
+    target_price: float
+    condition: str          # "above" | "below"
+    user_email: Optional[str] = None
+    triggered: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
