@@ -438,13 +438,14 @@ const Dashboard = () => {
   };
 
   /* ── Execute trade (protected) ─────────────────────────────────────────── */
-  const handleTrade = async () => {
-    if (!data || !token) return;
+  // `signal` can be "Buy", "Sell", or "Hold" — callers pass it explicitly
+  const handleTrade = async (signal) => {
+    if (!query || !token) return;
     setTradeMsg('');
-    setTradeLoading(true);
+    setTradeLoading(signal); // store which button is loading ("Buy"/"Sell"/AI signal)
     try {
       const execRes = await fetch(
-        `${API}/execute-trade?signal=${encodeURIComponent(data.signal)}&ticker=${encodeURIComponent(query)}`,
+        `${API}/execute-trade?signal=${encodeURIComponent(signal)}&ticker=${encodeURIComponent(query)}`,
         { method: 'POST', headers: authHeaders(token) }
       );
       const execResult = await execRes.json();
@@ -683,13 +684,6 @@ const Dashboard = () => {
     ? ((data.predicted_price - data.current_price) / data.current_price * 100).toFixed(2)
     : null;
 
-  const tradeButtonStyle = () => {
-    if (!data?.signal) return 'bg-white/10 text-white hover:bg-white/15';
-    if (data.signal === 'Buy')  return 'bg-emerald-500 hover:bg-emerald-400 text-black';
-    if (data.signal === 'Sell') return 'bg-red-500 hover:bg-red-400 text-white';
-    return 'bg-yellow-500 hover:bg-yellow-400 text-black';
-  };
-
   const isWatching = watchlist.some(w => w.ticker === query);
 
   return (
@@ -898,21 +892,55 @@ const Dashboard = () => {
                 </div>
 
                 <div className="mt-6 space-y-2.5">
-                  {/* Trade button — only shown to authenticated users */}
                   {currentUser ? (
-                    <button
-                      onClick={handleTrade}
-                      disabled={tradeLoading}
-                      className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 ${tradeButtonStyle()}`}
-                    >
-                      {tradeLoading ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <Spinner size="sm" /> Executing…
-                        </span>
-                      ) : (
-                        `Execute ${data.signal}`
+                    <>
+                      {/* Manual Buy / Sell buttons */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => handleTrade('Buy')}
+                          disabled={!!tradeLoading || !query}
+                          className="py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 bg-emerald-500 hover:bg-emerald-400 text-black flex items-center justify-center gap-1.5"
+                        >
+                          {tradeLoading === 'Buy' ? (
+                            <><Spinner size="sm" /> Buying…</>
+                          ) : (
+                            <><TrendingUp size={13} /> Buy</>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleTrade('Sell')}
+                          disabled={!!tradeLoading || !query}
+                          className="py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 bg-red-500 hover:bg-red-400 text-white flex items-center justify-center gap-1.5"
+                        >
+                          {tradeLoading === 'Sell' ? (
+                            <><Spinner size="sm" /> Selling…</>
+                          ) : (
+                            <><TrendingDown size={13} /> Sell</>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* AI signal button */}
+                      {data?.signal && (
+                        <button
+                          onClick={() => handleTrade(data.signal)}
+                          disabled={!!tradeLoading}
+                          className={`w-full py-2 rounded-xl text-xs font-medium transition-all disabled:opacity-40 border flex items-center justify-center gap-1.5 ${
+                            data.signal === 'Buy'
+                              ? 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
+                              : data.signal === 'Sell'
+                              ? 'border-red-500/30 text-red-400 hover:bg-red-500/10'
+                              : 'border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10'
+                          }`}
+                        >
+                          {tradeLoading === data.signal ? (
+                            <><Spinner size="sm" /> Executing…</>
+                          ) : (
+                            <><BarChart2 size={11} /> Execute AI Signal: {data.signal}</>
+                          )}
+                        </button>
                       )}
-                    </button>
+                    </>
                   ) : (
                     <button
                       onClick={() => setAuthModal('login')}
