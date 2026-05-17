@@ -11,7 +11,7 @@ import {
   Tooltip, ResponsiveContainer
 } from 'recharts';
 
-const API = import.meta.env.VITE_API_URL;
+const API = import.meta.env.VITE_API_URL || "";
 
 const nameToTicker = {
   "APPLE INC": "AAPL",

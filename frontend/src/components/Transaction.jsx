@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 
+const API_URL = import.meta.env.VITE_API_URL || "";
+
 const Transaction = () => {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -8,7 +10,7 @@ const Transaction = () => {
   // Function to fetch transactions
   const fetchTransactions = async () => {
     try {
-      const res = await axios.get(`${import.meta.env.VITE_API_URL}/transactions`);
+      const res = await axios.get(`${API_URL}/transactions`);
       setTransactions(res.data.data);
       setLoading(false);
     } catch (err) {

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import axios from "axios";
 
+const API_URL = import.meta.env.VITE_API_URL || "";
+
 const LoginForm = ({ onLogin }) => {
   const [form, setForm] = useState({
     email: "",
@@ -16,7 +18,7 @@ const LoginForm = ({ onLogin }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post(`${import.meta.env.VITE_API_URL}/login`, form);
+      const res = await axios.post(`${API_URL}/login`, form);
       setMessage(res.data.message);
       onLogin(res.data.user);  // You can store this user in state
     } catch (err) {

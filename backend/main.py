@@ -9,11 +9,13 @@ import base64
 import math
 import asyncio
 import time
+from pathlib import Path
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Query, HTTPException, Body, Request, Depends
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -233,6 +235,11 @@ def stock_stats(
 @app.get("/account-status")
 def check_account():
     return get_account_status()
+
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
 
 
 # ── Backtesting ────────────────────────────────────────────────────────────────
@@ -584,3 +591,25 @@ async def check_alert(alert_id: str, current_user: str = Depends(get_current_use
     """Mark an alert as triggered (called by the frontend when threshold is crossed)."""
     await mark_alert_triggered(alert_id)
     return {"message": "Alert marked as triggered."}
+
+
+# Serve the production React build when it exists. API routes are registered
+# above this catch-all so FastAPI still handles them first.
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+FRONTEND_ASSETS = FRONTEND_DIST / "assets"
+
+if FRONTEND_ASSETS.exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_ASSETS), name="assets")
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_frontend(full_path: str):
+    index_file = FRONTEND_DIST / "index.html"
+    requested_file = FRONTEND_DIST / full_path
+
+    if requested_file.is_file():
+        return FileResponse(requested_file)
+    if index_file.exists():
+        return FileResponse(index_file)
+
+    raise HTTPException(status_code=404, detail="Frontend build not found.")

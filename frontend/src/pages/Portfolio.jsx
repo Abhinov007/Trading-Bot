@@ -5,7 +5,7 @@ import {
   LogIn, LogOut, Lock, ArrowLeft, UserPlus,
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL;
+const API = import.meta.env.VITE_API_URL || "";
 
 const authHeaders = (token) => ({
   'Content-Type': 'application/json',

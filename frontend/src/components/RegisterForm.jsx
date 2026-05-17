@@ -1,6 +1,8 @@
 import { useState } from "react";
 import axios from "axios";
 
+const API_URL = import.meta.env.VITE_API_URL || "";
+
 const RegisterForm = () => {
   const [form, setForm] = useState({
     username: "",
@@ -18,7 +20,7 @@ const RegisterForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post(`${import.meta.env.VITE_API_URL}/register`, form);
+      const res = await axios.post(`${API_URL}/register`, form);
       setMessage(res.data.message);
     } catch (err) {
       setMessage(err.response.data.detail || "Registration failed");
