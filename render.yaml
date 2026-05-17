@@ -1,9 +1,10 @@
 services:
   - type: web
-    name: alphabot
+    name: alphabot-api
     runtime: docker
     plan: starter
     autoDeploy: true
+    dockerfilePath: ./Dockerfile.render
     healthCheckPath: /healthz
     envVars:
       - key: POLYGON_API_KEY
@@ -15,6 +16,8 @@ services:
       - key: ALPACA_BASE_URL
         value: https://paper-api.alpaca.markets
       - key: MONGO_URI
+        sync: false
+      - key: ALLOWED_ORIGINS
         sync: false
       - key: SECRET_KEY
         generateValue: true
